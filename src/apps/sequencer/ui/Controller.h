@@ -10,6 +10,7 @@ struct ControllerInfo {
     enum class Type : uint8_t {
         Launchpad,
         KnobPad16LaunchControlXL,
+        KnobPad16LaunchControlXL3,
         KnobPad16BeatStepPro,
     };
 

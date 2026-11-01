@@ -13,6 +13,7 @@ class KnobPad16Controller : public Controller {
 public:
     enum class Profile : uint8_t {
         LaunchControlXL,
+        LaunchControlXL3,
         BeatStepPro,
     };
 
@@ -106,4 +107,6 @@ private:
     std::array<int, 16> _padLedCache;
     int _prevSectionLedCache = -1;
     int _nextSectionLedCache = -1;
+    uint8_t _mk3SetupStep = 0;
+    bool _mk3DawSurface = false;
 };

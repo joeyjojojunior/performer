@@ -7,6 +7,7 @@ register_test(TestProjectScaleRemap TestProjectScaleRemap.cpp)
 register_test(TestRouting TestRouting.cpp)
 register_test(TestScale TestScale.cpp)
 if(${PLATFORM} STREQUAL "sim")
+    register_test(TestLaunchControlXL3 TestLaunchControlXL3.cpp)
     register_test(TestVoltageModeRegression TestVoltageModeRegression.cpp)
 endif()
 

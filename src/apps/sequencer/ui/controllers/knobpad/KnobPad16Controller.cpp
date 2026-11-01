@@ -1,4 +1,5 @@
 #include "KnobPad16Controller.h"
+#include "LaunchControlXL3.h"
 
 #include "ui/ControllerManager.h"
 
@@ -21,9 +22,26 @@ KnobPad16Controller::~KnobPad16Controller() {
         exitMode();
     }
     _model.setKnobPad16Armed(false);
+    if (_profile == Profile::LaunchControlXL3 && _mk3SetupStep > 0) {
+        sendMidi(LaunchControlXL3::DawCable, MidiMessage::makeNoteOn(15, 12, 0));
+    }
 }
 
 void KnobPad16Controller::update() {
+    if (_profile == Profile::LaunchControlXL3 && shouldEnableMode() && _mk3SetupStep < 2) {
+        // Enable the DAW protocol, then explicitly select its surface. The Mk3's
+        // "DAW Connection: Connect only" setting otherwise leaves Custom Mode up.
+        const auto message = _mk3SetupStep == 0
+            ? MidiMessage::makeNoteOn(15, 12, 127)
+            : MidiMessage::makeControlChange(6, 30, 1);
+        if (sendMidi(LaunchControlXL3::DawCable, message)) {
+            ++_mk3SetupStep;
+            _mk3DawSurface = _mk3SetupStep == 2;
+        }
+        if (_mk3SetupStep < 2) {
+            return;
+        }
+    }
     refreshMode();
     syncFeedback();
 }
@@ -32,7 +50,22 @@ void KnobPad16Controller::uiPageChanged() {
     refreshMode();
 }
 
-void KnobPad16Controller::recvMidi(uint8_t, const MidiMessage &message) {
+void KnobPad16Controller::recvMidi(uint8_t cable, const MidiMessage &incoming) {
+    MidiMessage message = incoming;
+    if (_profile == Profile::LaunchControlXL3) {
+        if (cable == LaunchControlXL3::DawCable && incoming.status() == 0xb6 && incoming.controlNumber() == 30) {
+            _mk3DawSurface = incoming.controlValue() == 1 || incoming.controlValue() == 2;
+            _padLedCache.fill(-1);
+            _prevSectionLedCache = _nextSectionLedCache = -1;
+            resetComboState();
+            return;
+        }
+        const auto input = LaunchControlXL3::decode(cable, incoming.status(), incoming.data0(), incoming.data1());
+        if (!input.valid) {
+            return;
+        }
+        message = MidiMessage(input.status, input.number, input.value);
+    }
     refreshMode();
 
     if (!shouldEnableMode()) {
@@ -324,6 +357,8 @@ void KnobPad16Controller::moveSection(int direction) {
 
 bool KnobPad16Controller::supportsPadFunctionFeedback() const {
     switch (_profile) {
+    case Profile::LaunchControlXL3:
+        return _mk3SetupStep == 2 && _mk3DawSurface;
     case Profile::LaunchControlXL:
     case Profile::BeatStepPro:
         return _profileMapping.channel >= 0;
@@ -407,8 +442,12 @@ void KnobPad16Controller::sendPadLed(int slot, int value, bool force) {
         return;
     }
 
-    sendMidi(0, MidiMessage::makeNoteOn(uint8_t(_profileMapping.channel), padNotes[slot], uint8_t(value)));
-    _padLedCache[slot] = value;
+    const bool sent = _profile == Profile::LaunchControlXL3
+        ? sendMidi(LaunchControlXL3::DawCable, MidiMessage::makeControlChange(0, LaunchControlXL3::padControl(slot), uint8_t(value)))
+        : sendMidi(0, MidiMessage::makeNoteOn(uint8_t(_profileMapping.channel), padNotes[slot], uint8_t(value)));
+    if (sent) {
+        _padLedCache[slot] = value;
+    }
 }
 
 void KnobPad16Controller::sendSectionLed(bool prev, bool on, bool force) {
@@ -427,12 +466,17 @@ void KnobPad16Controller::sendSectionLed(bool prev, bool on, bool force) {
         return;
     }
 
-    sendMidi(0, MidiMessage::makeControlChange(uint8_t(_profileMapping.channel), cc, uint8_t(value)));
-    cache = value;
+    const bool sent = _profile == Profile::LaunchControlXL3
+        ? sendMidi(LaunchControlXL3::DawCable, MidiMessage::makeControlChange(0, LaunchControlXL3::sectionControl(prev), on ? 3 : 0))
+        : sendMidi(0, MidiMessage::makeControlChange(uint8_t(_profileMapping.channel), cc, uint8_t(value)));
+    if (sent) {
+        cache = value;
+    }
 }
 
 int KnobPad16Controller::findKnobSlot(uint8_t cc) const {
     switch (_profile) {
+    case Profile::LaunchControlXL3:
     case Profile::LaunchControlXL:
     case Profile::BeatStepPro:
         // LCXL-compatible PERFORMERstep16 mapping:
@@ -447,6 +491,7 @@ int KnobPad16Controller::findKnobSlot(uint8_t cc) const {
 
 int KnobPad16Controller::findPadSlot(uint8_t note) const {
     switch (_profile) {
+    case Profile::LaunchControlXL3:
     case Profile::LaunchControlXL:
     case Profile::BeatStepPro:
         // LCXL-compatible PERFORMERstep16 mapping:
@@ -538,6 +583,13 @@ KnobPad16Controller::ProfileMapping KnobPad16Controller::buildProfileMapping(Pro
     ProfileMapping mapping;
 
     switch (profile) {
+    case Profile::LaunchControlXL3:
+        mapping.prevSectionCc = 106;
+        mapping.nextSectionCc = 107;
+        mapping.channel = 8; // normalized native controls and legacy Custom Mode
+        mapping.padOnValue = LaunchControlXL3::GateColour;
+        mapping.padPlayheadValue = LaunchControlXL3::PlayheadColour;
+        return mapping;
     case Profile::LaunchControlXL:
         // LaunchControl XL Factory Preset #1.
         mapping.knobMode = KnobMode::Absolute;

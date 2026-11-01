@@ -61,6 +61,7 @@ Vagrant.configure(2) do |config|
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://atlas.hashicorp.com/search.
   config.vm.box = "ubuntu/xenial64"
+  config.vm.boot_timeout = 600
 
   # Disable automatic box update checking. If you disable this, then
   # boxes will only be checked for updates when the user runs
@@ -98,9 +99,9 @@ Vagrant.configure(2) do |config|
    # Customize the amount of memory on the VM:
    vb.memory = "4096"
    
-   # Use 2 CPUs
-   vb.cpus = 2
-   
+   # Use one CPU for compatibility with older guests on Hyper-V-backed VirtualBox.
+   vb.cpus = 1
+
    # Enable all USB devices needed for development
    vb.customize ['modifyvm', :id, '--usb', 'on']
    vb.customize ['modifyvm', :id, '--usbehci', 'on']

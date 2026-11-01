@@ -27,6 +27,7 @@ struct Pages;
         { 0x1235, 0x0123, ControllerInfo::Type::Launchpad },    // Novation Launchpad Pro Mk3
         { 0x1235, 0x0065, ControllerInfo::Type::KnobPad16LaunchControlXL }, // Novation Launch Control XL
         { 0x1235, 0x006f, ControllerInfo::Type::KnobPad16LaunchControlXL }, // Novation Launch Control XL (alternate PID)
+        { 0x1235, 0x0148, ControllerInfo::Type::KnobPad16LaunchControlXL3 }, // Novation Launch Control XL 3
         { 0x1c75, 0x0038, ControllerInfo::Type::KnobPad16BeatStepPro },     // Arturia BeatStep Pro
         { 0x1c75, 0x0280, ControllerInfo::Type::KnobPad16BeatStepPro },     // Arturia BeatStep Pro (alternate PID)
     };

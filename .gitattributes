@@ -1,0 +1,3 @@
+# These scripts run inside Linux, including from a Windows shared folder.
+bin/** text eol=lf
+scripts/** text eol=lf

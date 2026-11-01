@@ -57,6 +57,11 @@ void ControllerManager::connect(uint16_t vendorId, uint16_t productId) {
             KnobPad16Controller::Profile::BeatStepPro
         );
         break;
+    case ControllerInfo::Type::KnobPad16LaunchControlXL3:
+        _controller = _controllerContainer.create<KnobPad16Controller>(
+            *this, _model, _engine, KnobPad16Controller::Profile::LaunchControlXL3
+        );
+        break;
     }
 }
 
