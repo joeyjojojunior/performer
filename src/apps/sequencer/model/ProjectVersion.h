@@ -122,6 +122,9 @@ enum ProjectVersion {
     // added project MIDI input event filter
     Version41 = 41,
 
+    // added per-note-track 16-step controller octave limits
+    Version42 = 42,
+
 
     // automatically derive latest version
     Last,

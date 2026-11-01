@@ -74,7 +74,7 @@ private:
     int findPadSlot(uint8_t note) const;
     int decodeRelativeDelta(uint8_t value) const;
     bool isInControllerChannel(const MidiMessage &message) const;
-    bool decodeControlAction(const MidiMessage &message, InputAction &action);
+    bool decodeControlAction(const MidiMessage &message, InputAction &action, bool relative = false);
     bool decodePadAction(const MidiMessage &message, InputAction &action);
     void applyInputAction(const InputAction &action);
     void resetComboState();
@@ -86,6 +86,7 @@ private:
     void applyPadToggle(int slot);
     bool supportsPadFunctionFeedback() const;
     void syncFeedback(bool force = false);
+    void syncTransportFeedback(bool force = false);
     void clearFeedback();
     int visiblePlayheadSlot(const NoteSequence &sequence) const;
     void sendPadLed(int slot, int value, bool force = false);
@@ -109,4 +110,12 @@ private:
     int _nextSectionLedCache = -1;
     uint8_t _mk3SetupStep = 0;
     bool _mk3DawSurface = false;
+    bool _mk3OctavePressed = false;
+    bool _mk3RecordPressed = false;
+    bool _mk3PlayPressed = false;
+    int _mk3RecordLedCache = -1;
+    int _mk3PlayLedCache = -1;
+    int _mk3EncoderModeCache = -1;
+    int _mk3EncoderModeTarget = -1;
+    uint8_t _mk3EncoderModeRow = 0;
 };

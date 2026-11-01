@@ -285,6 +285,20 @@ public:
 
     // sequences
 
+    // Limits for external 16-step note entry, in octaves before transposition.
+    int stepNoteMinOctave() const { return _stepNoteMinOctave; }
+    int stepNoteMaxOctave() const { return _stepNoteMaxOctave; }
+    void setStepNoteMinOctave(int value) {
+        _stepNoteMinOctave = clamp(value, -5, int(_stepNoteMaxOctave));
+    }
+    void setStepNoteMaxOctave(int value) {
+        _stepNoteMaxOctave = clamp(value, int(_stepNoteMinOctave), 5);
+    }
+    void editStepNoteMinOctave(int value, bool) { setStepNoteMinOctave(stepNoteMinOctave() + value); }
+    void editStepNoteMaxOctave(int value, bool) { setStepNoteMaxOctave(stepNoteMaxOctave() + value); }
+    void printStepNoteMinOctave(StringBuilder &str) const { str("%+d oct", stepNoteMinOctave()); }
+    void printStepNoteMaxOctave(StringBuilder &str) const { str("%+d oct", stepNoteMaxOctave()); }
+
     const NoteSequenceArray &sequences() const { return _sequences; }
           NoteSequenceArray &sequences()       { return _sequences; }
 
@@ -373,6 +387,9 @@ private:
 
     int8_t _logicTrack = -1;
     int8_t _logicTrackInput = -1;
+
+    int8_t _stepNoteMinOctave = -2;
+    int8_t _stepNoteMaxOctave = 3;
 
     NoteSequenceArray _sequences;
 

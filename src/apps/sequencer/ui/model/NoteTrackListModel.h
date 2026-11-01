@@ -88,6 +88,8 @@ private:
         PatternFollow,
         LogicTrack,
         LogicTrackInput,
+        StepNoteMinOctave,
+        StepNoteMaxOctave,
         Last
     };
 
@@ -110,6 +112,8 @@ private:
         case PatternFollow: return "Pattern Follow";
         case LogicTrack: return "Logic Track";
         case LogicTrackInput: return "Logic Track In";
+        case StepNoteMinOctave: return "16Step Min Oct";
+        case StepNoteMaxOctave: return "16Step Max Oct";
         case Last:      break;
         }
         return nullptr;
@@ -172,6 +176,12 @@ private:
         case LogicTrackInput:
             _track->printLogicTrackInput(str);
             break;
+        case StepNoteMinOctave:
+            _track->printStepNoteMinOctave(str);
+            break;
+        case StepNoteMaxOctave:
+            _track->printStepNoteMaxOctave(str);
+            break;
         case Last:
             break;
         }
@@ -179,6 +189,12 @@ private:
 
     void editValue(Item item, int value, bool shift) {
         switch (item) {
+        case StepNoteMinOctave:
+            _track->editStepNoteMinOctave(value, shift);
+            break;
+        case StepNoteMaxOctave:
+            _track->editStepNoteMaxOctave(value, shift);
+            break;
 
         case TrackName:
             break;

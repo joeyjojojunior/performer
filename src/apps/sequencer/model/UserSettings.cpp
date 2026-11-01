@@ -33,6 +33,9 @@ void UserSettings::clear() {
 
 void UserSettings::write(VersionedSerializedWriter &writer) const {
     for (auto &setting : _settings) {
+        if (setting->getKey() == SettingStepEncoderMode && writer.writerVersion() < 10) {
+            continue;
+        }
         setting->write(writer);
     }
 }
@@ -51,6 +54,11 @@ void UserSettings::read(VersionedSerializedReader &reader) {
             reader.read(dynamic_cast<ChaosPivotNoteSetting *>(setting)->getValue(), 6);
         } else if (setting->getKey() == SettingChaosSpan) {
             reader.read(dynamic_cast<ChaosSpanSetting *>(setting)->getValue(), 6);
+        } else if (setting->getKey() == SettingStepEncoderMode) {
+            auto &value = dynamic_cast<StepEncoderModeSetting *>(setting)->getValue();
+            value = 1; // relative is also the default when importing older settings
+            reader.read(value, 10);
+            value = std::min(value, uint8_t(1));
         } else if (setting->getKey() == SettingMenuWrap) {
             reader.read(dynamic_cast<MenuWrapSetting *>(setting)->getValue(), 4);
         } else {

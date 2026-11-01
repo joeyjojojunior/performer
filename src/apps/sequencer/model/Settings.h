@@ -6,7 +6,7 @@
 
 class Settings {
 public:
-    static constexpr uint32_t Version = 9;
+    static constexpr uint32_t Version = 10;
 
     static const char *Filename;
 

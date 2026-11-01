@@ -23,8 +23,9 @@ int main() {
 
     for (int knob = 0; knob < 8; ++knob) {
         CHECK(decode(1, 0xbf, uint8_t(13 + knob), 64).valid);
-        CHECK(decode(1, 0xbf, uint8_t(29 + knob), 64).valid);
-        CHECK(!decode(1, 0xbf, uint8_t(21 + knob), 64).valid); // middle row is unused
+        const auto middle = decode(1, 0xbf, uint8_t(21 + knob), 64);
+        CHECK(middle.valid && middle.number == 29 + knob);
+        CHECK(!decode(1, 0xbf, uint8_t(29 + knob), 64).valid); // third row is unused
     }
 
     const auto prev = decode(1, 0xb0, 103, 127);
@@ -44,6 +45,45 @@ int main() {
     CHECK(!decode(1, 0xb0, 36, 127).valid);
     CHECK(!decode(1, 0xb0, 53, 127).valid);
     CHECK(GateColour != 0 && PlayheadColour != 0 && GateColour != PlayheadColour);
+
+    for (int knob = 0; knob < 8; ++knob) {
+        const auto top = decode(1, 0xbf, uint8_t(77 + knob), 65, true);
+        const auto middle = decode(1, 0xbf, uint8_t(85 + knob), 63, true);
+        CHECK(top.valid && top.relative && top.number == 13 + knob);
+        CHECK(middle.valid && middle.relative && middle.number == 29 + knob);
+        CHECK(relativeDelta(top.value) == 1 && relativeDelta(middle.value) == -1);
+        CHECK(!decode(1, 0xbf, uint8_t(13 + knob), 65, true).valid);
+        CHECK(!decode(1, 0xbf, uint8_t(77 + knob), 65, false).valid);
+        CHECK(!decode(1, 0xbf, uint8_t(93 + knob), 65, true).valid);
+    }
+    CHECK(relativeDelta(64) == 0);
+    CHECK(relativeDelta(70) == 6 && relativeDelta(58) == -6);
+    CHECK(decode(1, 0xb0, 37, 127, true).valid); // pads unchanged
+    CHECK(decode(1, 0xb0, 103, 127, true).number == 106); // navigation unchanged
+    CHECK(!decode(0, 0xb8, 13, 65, true).relative); // Custom Mode stays absolute
+    CHECK(encoderModeControl(0) == 69 && encoderModeControl(1) == 72);
+    CHECK(isOctaveModifier(1, 0xb0, 65));
+    CHECK(!isOctaveModifier(0, 0xb0, 65));
+    CHECK(!isOctaveModifier(1, 0xb6, 65));
+    CHECK(!isOctaveModifier(1, 0xb6, 63)); // physical Shift stays preview-only
+    CHECK(!isOctaveModifier(1, 0xb0, 63));
+    CHECK(!isOctaveModifier(1, 0xb0, 66)); // Mute/Select is not the modifier
+    CHECK(!decode(1, 0xb0, 65, 127).valid); // modifier never becomes a step edit
+    CHECK(RecordControl == 118 && PlayControl == 116);
+    CHECK(isTransport(1, 0xb0, 118) && isTransport(1, 0xb0, 116));
+    CHECK(!isTransport(0, 0xb0, 118) && !isTransport(1, 0xb8, 118));
+    CHECK(!isTransport(1, 0xb0, 103) && !isTransport(1, 0xb6, 63));
+    CHECK(!decode(1, 0xb0, 118, 127).valid); // transport never becomes a step edit
+    CHECK(!decode(1, 0xb0, 116, 127).valid);
+    bool recordDown = false, playDown = false;
+    CHECK(pressEdge(recordDown, 127));
+    CHECK(!pressEdge(recordDown, 127)); // duplicate reports must not toggle twice
+    CHECK(pressEdge(playDown, 127)); // independent button state
+    CHECK(!pressEdge(recordDown, 0));
+    CHECK(!pressEdge(recordDown, 0));
+    CHECK(pressEdge(recordDown, 127));
+    CHECK(!pressEdge(playDown, 0));
+    CHECK(pressEdge(playDown, 127));
 
     std::puts("Launch Control XL 3 MIDI regression checks passed");
     return 0;

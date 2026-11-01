@@ -24,6 +24,7 @@
 #define SettingChaosPivotNote "chaospivot"
 #define SettingChaosSpan "chaosspan"
 #define SettingMenuWrap "menuwrap"
+#define SettingStepEncoderMode "stepencoders"
 
 static constexpr uint16_t DefaultChaosTargetMask = 0x3fff;
 static constexpr int ChaosPivotNoteMin = -64;
@@ -230,6 +231,17 @@ public:
     ) {}
 };
 
+class StepEncoderModeSetting : public Setting<uint8_t> {
+public:
+    StepEncoderModeSetting() : Setting(
+        SettingStepEncoderMode,
+        "16Step Encoders",
+        {"absolute", "relative"},
+        {uint8_t(0), uint8_t(1)},
+        uint8_t(1)
+    ) {}
+};
+
 class TriggerLengthSetting : public Setting<int> {
 public:
     TriggerLengthSetting() : Setting(
@@ -326,6 +338,8 @@ public:
         addSetting(new LaunchpadStyleSetting());
         addSetting(new LaunchpadNoteStyle());
         addSetting(new MenuWrapSetting());
+        // Append: user settings are serialized in registration order.
+        addSetting(new StepEncoderModeSetting());
     }
 
     //----------------------------------------

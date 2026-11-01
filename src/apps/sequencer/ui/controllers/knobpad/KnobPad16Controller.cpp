@@ -1,5 +1,6 @@
 #include "KnobPad16Controller.h"
 #include "LaunchControlXL3.h"
+#include "StepNoteRange.h"
 
 #include "ui/ControllerManager.h"
 
@@ -23,12 +24,14 @@ KnobPad16Controller::~KnobPad16Controller() {
     }
     _model.setKnobPad16Armed(false);
     if (_profile == Profile::LaunchControlXL3 && _mk3SetupStep > 0) {
+        sendMidi(LaunchControlXL3::DawCable, MidiMessage::makeControlChange(0, LaunchControlXL3::RecordControl, 0));
+        sendMidi(LaunchControlXL3::DawCable, MidiMessage::makeControlChange(0, LaunchControlXL3::PlayControl, 0));
         sendMidi(LaunchControlXL3::DawCable, MidiMessage::makeNoteOn(15, 12, 0));
     }
 }
 
 void KnobPad16Controller::update() {
-    if (_profile == Profile::LaunchControlXL3 && shouldEnableMode() && _mk3SetupStep < 2) {
+    if (_profile == Profile::LaunchControlXL3 && _mk3SetupStep < 2) {
         // Enable the DAW protocol, then explicitly select its surface. The Mk3's
         // "DAW Connection: Connect only" setting otherwise leaves Custom Mode up.
         const auto message = _mk3SetupStep == 0
@@ -42,7 +45,28 @@ void KnobPad16Controller::update() {
             return;
         }
     }
+    if (_profile == Profile::LaunchControlXL3 && _mk3SetupStep == 2 && _mk3DawSurface) {
+        // The octave modifier temporarily requires relative reports even in Absolute mode.
+        const int mode = _mk3OctavePressed || _model.settings().userSettings().get<StepEncoderModeSetting>(SettingStepEncoderMode)->getValue();
+        if (_mk3EncoderModeCache != mode || _mk3EncoderModeTarget >= 0) {
+            if (_mk3EncoderModeTarget != mode) {
+                _mk3EncoderModeTarget = mode;
+                _mk3EncoderModeRow = 0;
+            }
+            // Configure the top and middle rows independently. Retry a full
+            // MIDI queue without assuming either row received the command.
+            const uint8_t cc = LaunchControlXL3::encoderModeControl(_mk3EncoderModeRow);
+            if (sendMidi(LaunchControlXL3::DawCable, MidiMessage::makeControlChange(6, cc, mode ? 127 : 0))) {
+                if (++_mk3EncoderModeRow == 2) {
+                    _mk3EncoderModeCache = mode;
+                    _mk3EncoderModeTarget = -1;
+                }
+            }
+            return;
+        }
+    }
     refreshMode();
+    syncTransportFeedback();
     syncFeedback();
 }
 
@@ -52,19 +76,53 @@ void KnobPad16Controller::uiPageChanged() {
 
 void KnobPad16Controller::recvMidi(uint8_t cable, const MidiMessage &incoming) {
     MidiMessage message = incoming;
+    bool relative = false;
     if (_profile == Profile::LaunchControlXL3) {
+        if (LaunchControlXL3::isTransport(cable, incoming.status(), incoming.data0())) {
+            const bool record = incoming.controlNumber() == LaunchControlXL3::RecordControl;
+            bool &down = record ? _mk3RecordPressed : _mk3PlayPressed;
+            if (LaunchControlXL3::pressEdge(down, incoming.controlValue())) {
+                refreshMode();
+                if (record) {
+                    InputAction action;
+                    action.kind = InputActionKind::ToggleArmed;
+                    applyInputAction(action);
+                } else {
+                    // Match the module's unshifted Play button: stop/reset
+                    // when running, start from the beginning when stopped.
+                    _engine.togglePlay();
+                }
+                syncTransportFeedback();
+            }
+            return;
+        }
+        if (LaunchControlXL3::isOctaveModifier(cable, incoming.status(), incoming.data0())) {
+            _mk3OctavePressed = incoming.controlValue() != 0;
+            return;
+        }
         if (cable == LaunchControlXL3::DawCable && incoming.status() == 0xb6 && incoming.controlNumber() == 30) {
             _mk3DawSurface = incoming.controlValue() == 1 || incoming.controlValue() == 2;
+            _mk3OctavePressed = false;
+            _mk3RecordPressed = _mk3PlayPressed = false;
+            _mk3RecordLedCache = _mk3PlayLedCache = -1;
             _padLedCache.fill(-1);
             _prevSectionLedCache = _nextSectionLedCache = -1;
+            _mk3EncoderModeCache = _mk3EncoderModeTarget = -1;
             resetComboState();
             return;
         }
-        const auto input = LaunchControlXL3::decode(cable, incoming.status(), incoming.data0(), incoming.data1());
+        if (cable == LaunchControlXL3::DawCable && incoming.status() == 0xbf) {
+            const int desiredMode = _mk3OctavePressed || _model.settings().userSettings().get<StepEncoderModeSetting>(SettingStepEncoderMode)->getValue();
+            if (_mk3EncoderModeCache != desiredMode || _mk3EncoderModeTarget >= 0) {
+                return; // no knob edits while the two rows are changing modes
+            }
+        }
+        const auto input = LaunchControlXL3::decode(cable, incoming.status(), incoming.data0(), incoming.data1(), _mk3EncoderModeCache == 1);
         if (!input.valid) {
             return;
         }
         message = MidiMessage(input.status, input.number, input.value);
+        relative = input.relative;
     }
     refreshMode();
 
@@ -73,7 +131,7 @@ void KnobPad16Controller::recvMidi(uint8_t cable, const MidiMessage &incoming) {
     }
 
     InputAction action;
-    if (decodeControlAction(message, action) || decodePadAction(message, action)) {
+    if (decodeControlAction(message, action, relative) || decodePadAction(message, action)) {
         applyInputAction(action);
     }
 }
@@ -125,7 +183,7 @@ bool KnobPad16Controller::isInControllerChannel(const MidiMessage &message) cons
     return _profileMapping.channel < 0 || message.channel() == uint8_t(_profileMapping.channel);
 }
 
-bool KnobPad16Controller::decodeControlAction(const MidiMessage &message, InputAction &action) {
+bool KnobPad16Controller::decodeControlAction(const MidiMessage &message, InputAction &action, bool relative) {
     if (!message.isControlChange() || !isInControllerChannel(message)) {
         return false;
     }
@@ -157,6 +215,9 @@ bool KnobPad16Controller::decodeControlAction(const MidiMessage &message, InputA
             tapCandidate = true;
             if (_prevPressed && _nextPressed && !_comboTriggered) {
                 _comboTriggered = true;
+                if (_profile == Profile::LaunchControlXL3) {
+                    return false; // Mk3 arming belongs exclusively to Record.
+                }
                 action.kind = InputActionKind::ToggleArmed;
                 return true;
             }
@@ -185,6 +246,12 @@ bool KnobPad16Controller::decodeControlAction(const MidiMessage &message, InputA
     }
 
     action.slot = slot;
+
+    if (relative) {
+        action.kind = InputActionKind::AdjustNoteRelative;
+        action.value = LaunchControlXL3::relativeDelta(value);
+        return action.value != 0;
+    }
 
     if (_profileMapping.knobMode == KnobMode::Absolute) {
         action.kind = InputActionKind::SetNoteAbsolute;
@@ -367,6 +434,20 @@ bool KnobPad16Controller::supportsPadFunctionFeedback() const {
     }
 }
 
+void KnobPad16Controller::syncTransportFeedback(bool force) {
+    if (_profile != Profile::LaunchControlXL3 || !supportsPadFunctionFeedback()) {
+        return;
+    }
+    const auto sendLed = [this, force] (uint8_t control, int value, int &cache) {
+        if ((force || cache != value) &&
+            sendMidi(LaunchControlXL3::DawCable, MidiMessage::makeControlChange(0, control, uint8_t(value)))) {
+            cache = value;
+        }
+    };
+    sendLed(LaunchControlXL3::RecordControl, _armed ? 5 : 0, _mk3RecordLedCache);
+    sendLed(LaunchControlXL3::PlayControl, _engine.clockRunning() ? 21 : 0, _mk3PlayLedCache);
+}
+
 void KnobPad16Controller::syncFeedback(bool force) {
     if (!supportsPadFunctionFeedback()) {
         return;
@@ -517,11 +598,8 @@ int KnobPad16Controller::decodeRelativeDelta(uint8_t value) const {
 }
 
 int KnobPad16Controller::mapAbsoluteToNoteValue(const NoteSequence &sequence, uint8_t value) const {
-    constexpr int semitoneMin = -12;
-    constexpr int semitoneMax = 12;
-    constexpr int semitoneSpan = semitoneMax - semitoneMin;
-
-    const int semitone = semitoneMin + (int(value) * semitoneSpan + 63) / 127;
+    const auto &track = _model.project().selectedTrack().noteTrack();
+    const int semitone = StepNoteRange::absoluteSemitone(value, track.stepNoteMinOctave(), track.stepNoteMaxOctave());
     const auto &scale = sequence.selectedScale(_model.project().scale());
     const int note = scale.noteFromVolts(semitone * (1.f / 12.f));
 
@@ -531,8 +609,9 @@ int KnobPad16Controller::mapAbsoluteToNoteValue(const NoteSequence &sequence, ui
 int KnobPad16Controller::clampToKnobNoteRange(const NoteSequence &sequence, int note) const {
     const auto &scale = sequence.selectedScale(_model.project().scale());
 
-    int noteMin = scale.noteFromVolts(-1.f);
-    int noteMax = scale.noteFromVolts(1.f);
+    const auto &track = _model.project().selectedTrack().noteTrack();
+    int noteMin = scale.noteFromVolts(float(track.stepNoteMinOctave()));
+    int noteMax = scale.noteFromVolts(float(track.stepNoteMaxOctave()));
     if (noteMin > noteMax) {
         std::swap(noteMin, noteMax);
     }
@@ -566,7 +645,17 @@ void KnobPad16Controller::applyKnobRelative(int slot, int delta) {
     }
 
     auto &step = sequence.step(stepIndex);
-    step.setNote(clampToKnobNoteRange(sequence, step.note() + delta));
+    const int low = clampToKnobNoteRange(sequence, NoteSequence::Note::Min);
+    const int high = clampToKnobNoteRange(sequence, NoteSequence::Note::Max);
+    if (_profile == Profile::LaunchControlXL3 && _mk3OctavePressed) {
+        const auto &scale = step.bypassScale() ? Scale::get(0) : sequence.selectedScale(_model.project().scale());
+        const auto &track = _model.project().selectedTrack().noteTrack();
+        const int octaveLow = NoteSequence::Note::clamp(scale.noteFromVolts(float(track.stepNoteMinOctave())));
+        const int octaveHigh = NoteSequence::Note::clamp(scale.noteFromVolts(float(track.stepNoteMaxOctave())));
+        step.setNote(StepNoteRange::octaveNote(step.note(), delta, scale.notesPerOctave(), octaveLow, octaveHigh));
+    } else {
+        step.setNote(StepNoteRange::relativeNote(step.note(), delta, low, high));
+    }
 }
 
 void KnobPad16Controller::applyPadToggle(int slot) {

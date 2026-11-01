@@ -49,6 +49,8 @@ void NoteTrack::clear() {
     setRetriggerProbabilityBias(0);
     setLengthBias(0);
     setNoteProbabilityBias(0);
+    _stepNoteMinOctave = -2;
+    _stepNoteMaxOctave = 3;
 
     for (auto &sequence : _sequences) {
         sequence.clear();
@@ -75,6 +77,10 @@ void NoteTrack::write(VersionedSerializedWriter &writer) const {
     writer.write(_logicTrackInput);
     writeArray(writer, _sequences);
     writer.write(_patternFollow);
+    if (writer.writerVersion() >= ProjectVersion::Version42) {
+        writer.write(_stepNoteMinOctave);
+        writer.write(_stepNoteMaxOctave);
+    }
 }
 
 void NoteTrack::read(VersionedSerializedReader &reader) {
@@ -106,4 +112,10 @@ void NoteTrack::read(VersionedSerializedReader &reader) {
 
     readArray(reader, _sequences);
     reader.read(_patternFollow, ProjectVersion::Version39);
+    _stepNoteMinOctave = -2;
+    _stepNoteMaxOctave = 3;
+    reader.read(_stepNoteMinOctave, ProjectVersion::Version42);
+    reader.read(_stepNoteMaxOctave, ProjectVersion::Version42);
+    _stepNoteMinOctave = clamp(int(_stepNoteMinOctave), -5, 5);
+    _stepNoteMaxOctave = clamp(int(_stepNoteMaxOctave), int(_stepNoteMinOctave), 5);
 }
